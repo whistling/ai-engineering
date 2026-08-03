@@ -230,6 +230,10 @@ graph TD
     end
 ```
 
+```figure
+agentic-rag-loop
+```
+
 ## Build It
 
 ### Step 1: BM25 Implementation
@@ -519,7 +523,7 @@ client = anthropic.Anthropic()
 
 def hyde_with_llm(query):
     response = client.messages.create(
-        model="claude-sonnet-4-20250514",
+        model="claude-sonnet-5",
         max_tokens=256,
         messages=[{
             "role": "user",

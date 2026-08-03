@@ -327,6 +327,10 @@ You do not have to build everything from scratch. These tools provide eval infra
 
 For this lesson, we build it from scratch so you understand every layer. In production, use one of these tools.
 
+```figure
+llm-judge-rubric
+```
+
 ## Build It
 
 ### Step 1: Define the Eval Data Structures
@@ -850,7 +854,7 @@ if __name__ == "__main__":
 #
 # providers:
 #   - openai:gpt-4o
-#   - anthropic:messages:claude-sonnet-4-20250514
+#   - anthropic:messages:claude-sonnet-5
 #
 # tests:
 #   - vars:
