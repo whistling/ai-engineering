@@ -52,6 +52,8 @@ mlruns/
 *.safetensors
 *.bin
 *.h5
+*.gguf
+*.dylib
 .gstack/
 
 .link-cache.json
