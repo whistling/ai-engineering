@@ -64,6 +64,18 @@ Plan-and-Act scales the pattern to long-horizon web and mobile agents. The key c
 | Plan-and-Act | Long-horizon (>30 steps), web/mobile/computer-use |
 | Tree of Thoughts | Search is worth paying for (Lesson 04) |
 
+#### Detailed Comparison
+
+| Dimension / Pattern | ReAct | ReWOO | Plan-and-Execute | Plan-and-Act |
+| :--- | :--- | :--- | :--- | :--- |
+| **Planning Timing** | Runtime (plan at every step) | Compile-time (one-time planning) | Pre-execution planning + mid-execution revision | Pre-execution high-level planning + runtime fine-tuning |
+| **LLM Invocation Frequency** | Extremely high (required at every step) | Extremely low (typically only 2 times) | Moderate (depends on replanning frequency) | High (still requires LLM invocation at each execution step) |
+| **Concurrency Capability** | Poor (must be sequential) | Extremely strong (independent steps can run in parallel) | Moderate (parallelizable within stages) | Poor (typically relies on real-time feedback) |
+| **Mid-route Error Correction** | Extremely strong | None (relies entirely on Solver to handle errors) | Strong (macro-level redirection) | Strong (micro-level adjustments) |
+| **Token Consumption** | Extremely high | Extremely low | Moderate | Higher |
+| **Target Scenarios** | Short-horizon, highly interactive, and highly unpredictable tasks | Highly deterministic, data-intensive, and high-throughput pipelines | Long-horizon, complex, multi-step exploratory tasks | Goal-oriented but with execution details varying dynamically in exploratory tasks |
+
+
 Anthropic's Dec 2024 guidance: start with the simplest. If the task is one tool call plus a summary, do not build ReWOO. If the task is a 40-step research assignment, do not do ReAct alone.
 
 ## Build It
