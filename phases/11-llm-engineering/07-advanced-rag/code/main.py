@@ -1,8 +1,24 @@
+# Citing lesson docs: phases/11-llm-engineering/07-advanced-rag/docs/en.md
+# Reference: Cormack et al., "Reciprocal Rank Fusion Outperforms Condorcet and Individual Rank Learning Methods" (2009)
+# Reference: Robertson et al., "The Probabilistic Relevance Framework: BM25 and Beyond" (2009)
+# Reference: Gao et al., "Precise Zero-Shot Dense Retrieval without Relevance Labels" (HyDE, 2022)
+
 import math
 from collections import Counter
 
 
 def chunk_text(text, chunk_size=200, overlap=50):
+    """
+    基于单词数量的滑动窗口分块函数。
+    
+    参数:
+        text (str): 待分块的原始文本。
+        chunk_size (int): 每个分块（Chunk）的最大单词数。
+        overlap (int): 相邻分块之间的重叠单词数，用于保持跨边界语义的连贯性。
+        
+    返回:
+        list: 分割后的文本分块列表。
+    """
     words = text.split()
     chunks = []
     start = 0
@@ -10,41 +26,97 @@ def chunk_text(text, chunk_size=200, overlap=50):
         end = start + chunk_size
         chunk = " ".join(words[start:end])
         chunks.append(chunk)
+        # 向后滑动窗口：移动距离为窗口大小减去重叠大小
         start += chunk_size - overlap
     return chunks
 
 
 def build_vocabulary(documents):
+    """
+    基于文档语料库构建全局词汇表。
+    
+    参数:
+        documents (list of str): 所有的文档/文本分块。
+        
+    返回:
+        list: 按字母排序且不重复的词汇列表。
+    """
     vocab = set()
     for doc in documents:
+        # 将文本转换为小写并按空格切分，收集词项
         vocab.update(doc.lower().split())
     return sorted(vocab)
 
 
 def compute_tf(text, vocab):
+    """
+    计算给定文本在全局词汇表上的词频（Term Frequency, TF）。
+    
+    参数:
+        text (str): 输入文本。
+        vocab (list): 全局词汇表。
+        
+    返回:
+        list: 该文本对应的 TF 向量（每个词项在文本中的频率百分比）。
+    """
     words = text.lower().split()
     count = Counter(words)
     total = len(words)
     if total == 0:
         return [0.0] * len(vocab)
+    # 计算词频：该词在文本中出现的次数 / 文本总词数
     return [count.get(word, 0) / total for word in vocab]
 
 
 def compute_idf(documents, vocab):
+    """
+    计算全局词汇表中每个词项的逆文档频率（Inverse Document Frequency, IDF）。
+    
+    参数:
+        documents (list of str): 整个语料库中的所有文档分块。
+        vocab (list): 全局词汇表。
+        
+    返回:
+        list: 每个词项的 IDF 值列表。
+    """
     n = len(documents)
     idf = []
     for word in vocab:
+        # 统计有多少文档包含了当前词项
         doc_count = sum(1 for doc in documents if word in doc.lower().split())
+        # 使用平滑的 IDF 公式，避免分母为 0 且防止出现负值
         idf.append(math.log((n + 1) / (doc_count + 1)) + 1)
     return idf
 
 
 def tfidf_embed(text, vocab, idf):
+    """
+    生成给定文本的 TF-IDF 向量嵌入（Embedding）。
+    
+    参数:
+        text (str): 输入文本。
+        vocab (list): 全局词汇表。
+        idf (list): 词汇表对应的 IDF 向量。
+        
+    返回:
+        list: TF-IDF 嵌入向量。
+    """
     tf = compute_tf(text, vocab)
+    # 将每个词项的 TF 值乘以其全局 IDF 值
     return [t * i for t, i in zip(tf, idf)]
 
 
 def cosine_similarity(a, b):
+    """
+    计算两个向量之间的余弦相似度（Cosine Similarity），用于评估它们的语义相关性。
+    
+    参数:
+        a (list of float): 向量 A。
+        b (list of float): 向量 B。
+        
+    返回:
+        float: 相似度得分，范围在 [-1.0, 1.0] 之间。
+    """
     dot_product = sum(x * y for x, y in zip(a, b))
     norm_a = math.sqrt(sum(x * x for x in a))
     norm_b = math.sqrt(sum(x * x for x in b))
@@ -54,25 +126,53 @@ def cosine_similarity(a, b):
 
 
 def vector_search(query_embedding, stored_embeddings, top_k=5):
+    """
+    在已存向量中进行余弦相似度精确匹配的向量检索。
+    
+    参数:
+        query_embedding (list): 查询文本的嵌入向量。
+        stored_embeddings (list of list): 整个语料库分块的嵌入向量列表。
+        top_k (int): 返回的最相似结果数。
+        
+    返回:
+        list of tuple: 格式为 (doc_index, similarity_score) 的结果列表，按相似度降序排列。
+    """
     scores = []
     for i, emb in enumerate(stored_embeddings):
         sim = cosine_similarity(query_embedding, emb)
         scores.append((i, sim))
+    # 按照语义相似度从高到低排序
     scores.sort(key=lambda x: x[1], reverse=True)
     return scores[:top_k]
 
 
 class BM25:
+    """
+    BM25 (Best Matching 25) 关键字检索算法的纯 Python 标准库实现。
+    """
     def __init__(self, k1=1.2, b=0.75):
+        """
+        初始化 BM25 参数。
+        
+        参数:
+            k1 (float): 词频饱和度控制参数。k1 越大，高频词的加分越不容易饱和。默认 1.2。
+            b (float): 文档长度归一化惩罚程度。b=1 表示完全根据文档长度惩罚；b=0 表示关闭长度惩罚。默认 0.75。
+        """
         self.k1 = k1
         self.b = b
         self.docs = []
         self.doc_lengths = []
         self.avg_dl = 0
-        self.doc_freqs = {}
+        self.doc_freqs = {} # 词项 -> 包含该词项的文档数量 (DF)
         self.n_docs = 0
 
     def index(self, documents):
+        """
+        对输入文档库构建 BM25 倒排索引。
+        
+        参数:
+            documents (list of str): 文档分块语料库。
+        """
         self.docs = documents
         self.n_docs = len(documents)
         self.doc_lengths = []
@@ -81,13 +181,25 @@ class BM25:
         for doc in documents:
             words = doc.lower().split()
             self.doc_lengths.append(len(words))
+            # 统计文档频次（DF）
             unique_words = set(words)
             for word in unique_words:
                 self.doc_freqs[word] = self.doc_freqs.get(word, 0) + 1
 
+        # 计算整个语料库的平均文档长度
         self.avg_dl = sum(self.doc_lengths) / self.n_docs if self.n_docs else 1
 
     def score(self, query, doc_idx):
+        """
+        计算特定查询对指定文档的 BM25 相关性得分。
+        
+        参数:
+            query (str): 查询文本。
+            doc_idx (int): 文档库中的文档索引。
+            
+        返回:
+            float: BM25 相关性得分。
+        """
         query_words = query.lower().split()
         doc_words = self.docs[doc_idx].lower().split()
         doc_len = self.doc_lengths[doc_idx]
@@ -99,40 +211,103 @@ class BM25:
                 continue
             tf = word_counts[term]
             df = self.doc_freqs.get(term, 0)
+            
+            # 计算平滑的逆文档频率 (IDF)
             idf = math.log((self.n_docs - df + 0.5) / (df + 0.5) + 1)
+            
+            # 计算词频阻尼和文档长度惩罚项
             numerator = tf * (self.k1 + 1)
             denominator = tf + self.k1 * (1 - self.b + self.b * doc_len / self.avg_dl)
+            
+            # 累加查询中每个词项在目标文档中的得分贡献
             total += idf * numerator / denominator
 
         return total
 
     def search(self, query, top_k=10):
+        """
+        在索引中对查询进行关键字检索，返回得分最高的结果。
+        
+        参数:
+            query (str): 查询文本。
+            top_k (int): 返回的最大结果数量。
+            
+        返回:
+            list of tuple: 格式为 (doc_index, bm25_score) 的结果列表，按得分降序排列。
+        """
         scores = [(i, self.score(query, i)) for i in range(self.n_docs)]
         scores.sort(key=lambda x: x[1], reverse=True)
         return scores[:top_k]
 
 
 def reciprocal_rank_fusion(ranked_lists, k=60):
+    """
+    倒数排名融合（Reciprocal Rank Fusion, RRF）算法。
+    将多路异构检索器输出的排名列表（如 BM25 排名、向量语义排名）无缝融合成一个最终排名。
+    
+    参数:
+        ranked_lists (list of list): 多个检索器的输出列表，每个列表内为 (doc_id, score) 元组。
+        k (int): 平滑因子，控制排名前列的权重落差。默认值为 60。
+        
+    返回:
+        list of tuple: 融合后的结果列表，格式为 (doc_id, rrf_score)，按 RRF 得分降序排列。
+    """
     scores = {}
     for ranked_list in ranked_lists:
         for rank, (doc_id, _) in enumerate(ranked_list):
             if doc_id not in scores:
                 scores[doc_id] = 0.0
+            # 核心公式: 1 / (k + rank + 1)，其中 rank 从 0 开始，所以加 1 转换成从 1 开始的真实排名
             scores[doc_id] += 1.0 / (k + rank + 1)
+    # 按倒数排名融合的综合得分降序排序
     fused = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     return fused
 
 
 def hybrid_search(query, chunks, vector_embeddings, vocab, idf, bm25_index, top_k=5, retrieval_pool=15):
+    """
+    混合检索（Hybrid Search）：向量检索 + 关键字检索 + RRF 融合。
+    
+    参数:
+        query (str): 查询文本。
+        chunks (list): 文本分块列表。
+        vector_embeddings (list): 文本分块对应的向量嵌入列表。
+        vocab (list): 全局词表。
+        idf (list): 全局 IDF 向量。
+        bm25_index (BM25): 已经构建完毕的 BM25 索引实例。
+        top_k (int): 最终合并列表需要返回的结果数量。
+        retrieval_pool (int): 每一路子检索器检索候选集的池大小。
+        
+    返回:
+        list of tuple: 混合检索到的最相似文档元组列表 (doc_id, rrf_score)。
+    """
+    # 1. 向量搜索获取 top候选集
     query_emb = tfidf_embed(query, vocab, idf)
     vec_results = vector_search(query_emb, vector_embeddings, top_k=retrieval_pool)
+    
+    # 2. BM25 关键字搜索获取 top候选集
     bm25_results = bm25_index.search(query, top_k=retrieval_pool)
+    
+    # 3. 使用 RRF 算法进行排名融合
     fused = reciprocal_rank_fusion([vec_results, bm25_results])
     return fused[:top_k]
 
 
 def rerank(query, candidates, chunks):
+    """
+    轻量级重排序器（Reranker），启发式模拟 Cross-Encoder 的精细打分过程。
+    结合了关键词交集（词项重合度）、二元组（Bi-gram）匹配度、首段权重提升和初筛基础分。
+    
+    参数:
+        query (str): 用户查询。
+        candidates (list): 初始检索候选文档的元组列表 (doc_id, initial_score)。
+        chunks (list of str): 文档库文本分块。
+        
+    返回:
+        list of tuple: 重排打分后的元组列表 (doc_id, rerank_score)，降序排列。
+    """
     query_words = set(query.lower().split())
+    # 定义标准虚词/停用词表，剔除噪音
     stop_words = {"the", "a", "an", "is", "are", "was", "were", "what", "how",
                   "why", "when", "where", "do", "does", "for", "of", "in", "to",
                   "and", "or", "on", "at", "by", "it", "its", "this", "that",
@@ -144,20 +319,24 @@ def rerank(query, candidates, chunks):
         chunk = chunks[doc_id].lower()
         chunk_words = set(chunk.split())
 
+        # Heuristic 1: 单词重合度（交集大小）
         term_overlap = len(query_terms & chunk_words)
 
+        # Heuristic 2: 二元词组（Bi-gram）的精确子串匹配（考察局部语序连续性）
         query_bigrams = set()
         q_list = [w for w in query.lower().split() if w not in stop_words]
         for i in range(len(q_list) - 1):
             query_bigrams.add(q_list[i] + " " + q_list[i + 1])
         bigram_matches = sum(1 for bg in query_bigrams if bg in chunk)
 
+        # Heuristic 3: 位置偏置（主旨一般在文本前 1/3，如果在前部命中关键词则给予加分）
         position_boost = 0
         for term in query_terms:
             pos = chunk.find(term)
             if pos != -1 and pos < len(chunk) // 3:
                 position_boost += 0.5
 
+        # 综合打分公式：结合初筛分与多种文本细粒度重合指标
         rerank_score = (
             term_overlap * 1.0
             + bigram_matches * 2.0
@@ -171,6 +350,17 @@ def rerank(query, candidates, chunks):
 
 
 def hyde_generate_hypothesis(query):
+    """
+    HyDE（Hypothetical Document Embeddings，假设文档嵌入）的规则生成器。
+    模拟大模型根据查询意图自动生成“伪文档”草稿，帮助缓和查询与真实文本之间的语义鸿沟。
+    
+    参数:
+        query (str): 查询文本。
+        
+    返回:
+        str: 自动生成的虚构/假设相关文档。
+    """
+    # 模拟针对不同疑问词的伪回答生成模板
     templates = {
         "what": "The answer to '{query}' is as follows: Based on our documentation, {topic} involves specific policies and procedures that define the process and requirements.",
         "how": "To address '{query}': The process involves several steps. First, you need to initiate the request for {topic}. Then, the system processes it according to the defined rules and policies.",
@@ -184,6 +374,7 @@ def hyde_generate_hypothesis(query):
     else:
         template = templates["default"]
 
+    # 提取查询核心主题词，过滤常见连词
     filler = {"what", "is", "the", "how", "do", "does", "a", "an", "for", "of",
               "to", "in", "on", "at", "by", "and", "or", "are", "was", "were", "?"}
     topic_words = [w.strip("?.,!") for w in query.lower().split() if w.strip("?.,!") not in filler]
@@ -193,13 +384,42 @@ def hyde_generate_hypothesis(query):
 
 
 def hyde_search(query, vector_embeddings, vocab, idf, top_k=5):
+    """
+    执行 HyDE 检索：利用生成的“假设伪文档”进行向量相似度匹配。
+    
+    参数:
+        query (str): 原始查询。
+        vector_embeddings (list): 全局候选文档向量。
+        vocab (list): 全局词汇表。
+        idf (list): 词汇表对应 IDF 向量。
+        top_k (int): 返回最接近的结果数。
+        
+    返回:
+        tuple: (检索到的元组结果列表, 生成的假设伪文档文本)
+    """
+    # 1. 生成假设性的相关伪文档（Hypothesis）
     hypothesis = hyde_generate_hypothesis(query)
+    # 2. 将伪文档编码成语义向量
     hypothesis_emb = tfidf_embed(hypothesis, vocab, idf)
+    # 3. 使用伪文档向量对真实文本库进行匹配，返回最接近真实文档
     results = vector_search(hypothesis_emb, vector_embeddings, top_k)
     return results, hypothesis
 
 
 def create_parent_child_chunks(text, parent_size=200, child_size=50):
+    """
+    父子分块（Parent-Child Chunking）策略生成器。
+    将大段文本拆分成大粒度的父文档和小粒度的子文档。检索时对子文档进行高精度语义匹配，
+    匹配成功后将更完整的父文档内容提供给 LLM 作为上下文，解决“精准检索 vs 丰富上下文”的矛盾。
+    
+    参数:
+        text (str): 待处理的完整原始长文本。
+        parent_size (int): 父分块的最大单词数。
+        child_size (int): 子分块的最大单词数。
+        
+    返回:
+        tuple: (父分块列表, 子分块列表, 子分块索引到对应父分块索引的映射 map)
+    """
     words = text.split()
     parents = []
     children = []
@@ -212,12 +432,14 @@ def create_parent_child_chunks(text, parent_size=200, child_size=50):
         parent_text = " ".join(words[start:parent_end])
         parents.append(parent_text)
 
+        # 在当前父分块的文字范围内，无重叠地切分成子分块
         child_start = start
         while child_start < parent_end:
             child_end = min(child_start + child_size, parent_end)
             child_text = " ".join(words[child_start:child_end])
             child_idx = len(children)
             children.append(child_text)
+            # 记录当前子文档所属的父文档 ID
             child_to_parent[child_idx] = parent_idx
             child_start += child_size
 
@@ -228,6 +450,18 @@ def create_parent_child_chunks(text, parent_size=200, child_size=50):
 
 
 def evaluate_faithfulness(answer, retrieved_chunks):
+    """
+    基于启发式词重合度计算的 RAG 忠实度（Faithfulness）评估。
+    检查模型输出的每一句话，是否都能在检索出的原始 Context 中找到支撑，从而识别并量化幻觉。
+    
+    参数:
+        answer (str): 模型生成的回答。
+        retrieved_chunks (list of str): 检索出来的参考上下文 chunks。
+        
+    返回:
+        tuple: (忠实度得分 0.0~1.0, 缺乏事实依据的幻觉/无依据句子列表)
+    """
+    # 按句号分割成句子，并剔除过短的无效空句
     answer_sentences = [s.strip() for s in answer.split(".") if len(s.strip()) > 10]
     if not answer_sentences:
         return 1.0, []
@@ -245,19 +479,33 @@ def evaluate_faithfulness(answer, retrieved_chunks):
             grounded += 1
             continue
 
+        # 检查句子里的核心实词，有多少在参考上下文中命中
         matched = sum(1 for w in content_words if w in context)
         ratio = matched / len(content_words) if content_words else 0
 
+        # 如果至少一半的实词都在上下文中出现，认定该句子在上下文中有事实依据
         if ratio >= 0.5:
             grounded += 1
         else:
             ungrounded.append(sentence)
 
+    # 忠实度得分 = 有依据句子数 / 总句子数
     score = grounded / len(answer_sentences) if answer_sentences else 1.0
     return score, ungrounded
 
 
 def evaluate_retrieval_recall(queries_with_relevant, retrieval_fn, k=5):
+    """
+    评估检索系统在测试集上的平均召回率（Recall@K）。
+    
+    参数:
+        queries_with_relevant (list): 格式为 (query, list_of_ground_truth_indices) 的测试元组。
+        retrieval_fn (callable): 检索函数，接收 (query, k) 并返回检索结果的 ID。
+        k (int): 检索召回的 TopK 截止位置。
+        
+    返回:
+        tuple: (平均召回率 0.0~1.0, 每条 query 的详细召回指标列表)
+    """
     total_recall = 0.0
     results = []
 
@@ -265,7 +513,10 @@ def evaluate_retrieval_recall(queries_with_relevant, retrieval_fn, k=5):
         retrieved = retrieval_fn(query, k)
         retrieved_indices = set(idx for idx, _ in retrieved)
         relevant_set = set(relevant_indices)
+        
+        # 命中交集数
         hits = len(retrieved_indices & relevant_set)
+        # 召回率 = 检索命中的真实数 / 所有真实数
         recall = hits / len(relevant_set) if relevant_set else 1.0
         total_recall += recall
         results.append({
@@ -280,6 +531,17 @@ def evaluate_retrieval_recall(queries_with_relevant, retrieval_fn, k=5):
 
 
 def build_rag_prompt(query, retrieved_chunks):
+    """
+    构建最终输入给 LLM 的系统 RAG 提示词（Prompt）。
+    
+    参数:
+        query (str): 用户提问。
+        retrieved_chunks (list of str): 检索获取的相关知识上下文。
+        
+    返回:
+        str: 拼接完成的 RAG 提示词。
+    """
+    # 格式化上下文块，标明来源序号
     context = "\n\n---\n\n".join(
         f"[Source {i+1}]\n{chunk}"
         for i, chunk in enumerate(retrieved_chunks)
@@ -294,6 +556,7 @@ def build_rag_prompt(query, retrieved_chunks):
     )
 
 
+# 虚拟的 Acme 公司业务与政策数据库作为测试文档集
 SAMPLE_DOCUMENTS = [
     """Acme Corp Refund Policy.
     All standard plan customers are eligible for a full refund within 30 days of purchase.
@@ -363,6 +626,7 @@ if __name__ == "__main__":
     print("STEP 1: BM25 Keyword Search")
     print("=" * 65)
 
+    # 对文档集进行细粒度预分块
     all_chunks = []
     chunk_sources = []
     source_names = ["refund", "product", "security", "api", "earnings", "uptime"]
@@ -372,6 +636,7 @@ if __name__ == "__main__":
             all_chunks.append(c)
             chunk_sources.append(source_names[i])
 
+    # 初始化 BM25 并编入词汇索引
     bm25 = BM25()
     bm25.index(all_chunks)
 
@@ -387,6 +652,7 @@ if __name__ == "__main__":
     print("STEP 2: Vector Search vs BM25")
     print("=" * 65)
 
+    # 对全分块提取向量嵌入词袋表示（模拟 Vector DB 嵌入存储）
     vocab = build_vocabulary(all_chunks)
     idf = compute_idf(all_chunks, vocab)
     embeddings = [tfidf_embed(c, vocab, idf) for c in all_chunks]
@@ -399,6 +665,7 @@ if __name__ == "__main__":
         "What happens if uptime falls below SLA?"
     ]
 
+    # 对比同一组查询下，TF-IDF 向量搜索与 BM25 谁的 Top1 能准确抓到对应主题
     for query in queries:
         query_emb = tfidf_embed(query, vocab, idf)
         vec_top1 = vector_search(query_emb, embeddings, top_k=1)[0]
@@ -429,6 +696,7 @@ if __name__ == "__main__":
     for rank, (idx, score) in enumerate(bm25_results[:3]):
         print(f"    #{rank+1} [{chunk_sources[idx]}] {score:.4f}")
 
+    # 将上面独立出的向量和关键字列表排名进行倒数排名融合（RRF）
     fused = reciprocal_rank_fusion([vec_results, bm25_results])
     print(f"\n  RRF fused top-5:")
     for rank, (idx, score) in enumerate(fused[:5]):
@@ -442,7 +710,9 @@ if __name__ == "__main__":
     query = "enterprise refund policy"
     print(f"  Query: {query}")
 
+    # 1. 混合搜索出前 10 个候选块作为底排池
     hybrid_results = hybrid_search(query, all_chunks, embeddings, vocab, idf, bm25, top_k=10)
+    # 2. 传入候选块和查询到细粒度重排序器中进行二次精排
     reranked = rerank(query, hybrid_results, all_chunks)
 
     print(f"\n  Before reranking (top-5):")
@@ -463,6 +733,7 @@ if __name__ == "__main__":
     print(f"  Query: {query}")
     print(f"  (Note: query uses 'money', docs use 'revenue' and 'earnings')")
 
+    # 对比直接用语义向量检索 vs. 通过 HyDE 生成假设文档后再检索的效果
     query_emb = tfidf_embed(query, vocab, idf)
     direct_results = vector_search(query_emb, embeddings, top_k=3)
     hyde_results, hypothesis = hyde_search(query, embeddings, vocab, idf, top_k=3)
@@ -481,6 +752,7 @@ if __name__ == "__main__":
     print("STEP 6: Parent-Child Chunking")
     print("=" * 65)
 
+    # 合并所有文档，重新切分为父文档与子文档结构
     full_text = " ".join(SAMPLE_DOCUMENTS)
     parents, children, child_to_parent = create_parent_child_chunks(
         full_text, parent_size=100, child_size=25
@@ -496,6 +768,7 @@ if __name__ == "__main__":
     child_embeddings = [tfidf_embed(c, child_vocab, child_idf) for c in children]
 
     query = "enterprise refund 60 days"
+    # 用小范围高灵敏的子文档进行嵌入和相似度匹配
     query_emb = tfidf_embed(query, child_vocab, child_idf)
     child_results = vector_search(query_emb, child_embeddings, top_k=3)
 
@@ -505,17 +778,20 @@ if __name__ == "__main__":
         parent_idx = child_to_parent[idx]
         print(f"    Child #{idx} (score={score:.4f}):")
         print(f"      Child text: {children[idx][:80]}...")
+        # 匹配到子文档后，给大模型返回其更大、包含完整上下文的父文档内容
         print(f"      Parent #{parent_idx}: {parents[parent_idx][:80]}...")
 
     print("\n" + "=" * 65)
     print("STEP 7: Faithfulness Evaluation")
     print("=" * 65)
 
+    # 真实的回答（所有断言都在 Context 中有支持）
     good_answer = (
         "Enterprise customers receive a 60-day refund window. "
         "Refunds are pro-rated from the date of cancellation. "
         "Processing takes 5-7 business days."
     )
+    # 虚假的回答（包含无事实根据的幻觉宣称，如 90 天，立刻处理，50刀服务费）
     bad_answer = (
         "Enterprise customers receive a 90-day refund window. "
         "Refunds are processed instantly. "
@@ -547,6 +823,7 @@ if __name__ == "__main__":
     print("STEP 8: Full Advanced RAG Pipeline Comparison")
     print("=" * 65)
 
+    # 对不同的单独检索与组合检索方式进行整体精度/命中召回比对
     comparison_queries = [
         ("What is the refund policy for enterprise?", "refund"),
         ("What was Q3 revenue?", "earnings"),

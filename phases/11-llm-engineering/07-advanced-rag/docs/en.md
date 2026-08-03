@@ -37,33 +37,68 @@ Keyword search (BM25) is the opposite. It excels at exact matches. "E-4021" matc
 
 Hybrid search runs both, then merges the results.
 
-**BM25** (Best Matching 25) is the standard keyword search algorithm. It has been the backbone of search engines since the 1990s. The formula:
+#### BM25 Deep Dive
 
-```
-BM25(q, d) = sum over terms t in q:
-    IDF(t) * (tf(t,d) * (k1 + 1)) / (tf(t,d) + k1 * (1 - b + b * |d| / avgdl))
-```
+**BM25** (Best Matching 25) is the standard keyword search algorithm. It has been the backbone of search engines (like Elasticsearch and Lucene) since the 1990s. It is an evolutionary upgrade to the classic TF-IDF algorithm.
 
-Where tf(t,d) is the term frequency of t in document d, IDF(t) is the inverse document frequency, |d| is the document length, avgdl is the average document length, k1 controls term frequency saturation (default 1.2), and b controls length normalization (default 0.75).
+If you want a quick conceptual understanding of how BM25 works, you can focus on its **three core pillars** (without getting bogged down by the mathematical formulas):
 
-In plain terms: BM25 scores documents higher when they contain query terms (especially rare ones), but with diminishing returns for repeated terms. A document with the word "revenue" 50 times is not 50x more relevant than one with it once.
+1. **Term Rarity (IDF: The rarer the term, the higher its weight)**:
+   - The core idea is "rarity equals relevance." In a query, common terms like "the", "how", "to" appear in almost every document and do not help identify the correct document. On the other hand, rare terms like "E-4021" (a specific error code) or "hallucination" (a specific topic) are highly selective. BM25 automatically assigns a high weight to rare terms and discounts or ignores common ones.
+2. **Term Frequency Saturation (TF Saturation: Repeated hits have diminishing returns, with a ceiling)**:
+   - The core idea is to prevent "keyword stuffing." Mentioning a term 1 time is useful, 2 times is slightly more useful, but mentioning it 100 times does not make a document 100x more relevant. BM25 sets a ceiling on term frequency contribution (controlled by parameter $k_1$). As a term appears more times in a document, its incremental score contribution quickly saturates and plateaus.
+3. **Document Length Normalization (L-Norm: Matching in short documents is more significant)**:
+   - The core idea is to penalize bloated, "watered-down" documents. If a 10-word short title matches a keyword, and a 10,000-word comprehensive whitepaper matches that same keyword once, the short title is highly likely to be entirely dedicated to that keyword. BM25 penalizes documents based on their relative length (controlled by parameter $b$), boosting shorter documents and lowering scores for extremely long ones.
+
+> [!NOTE]
+> For detailed mathematical formulas, smoothing IDF derivations, parameter controls, and a step-by-step hand-calculated numerical example, refer to the dedicated page: [BM25 Mathematical Details & Code Alignment](bm25_math_en.md).
+
 
 ### Reciprocal Rank Fusion (RRF)
 
-You have two ranked lists: one from vector search, one from BM25. How do you combine them? Reciprocal Rank Fusion is the standard approach.
+In large-scale RAG or Hybrid Search architectures, **RRF (Reciprocal Rank Fusion)** is the most widely adopted and elegant algorithm for combining ranked lists.
 
-```
-RRF_score(d) = sum over rankings R:
-    1 / (k + rank_R(d))
-```
+Simply put, RRF's core logic is: **disregard raw scores, focus only on ranks**.
 
-Where k is a constant (typically 60) that prevents the top-ranked result from dominating.
+#### 1. Why do we need RRF? (The Core Pain Point: Aligning Heterogeneous Scores)
+When building a hybrid retrieval system, we typically use:
+- **Semantic Retrieval (Vector Search)**: Scores are usually cosine similarity or dot product, typically ranging in $[-1, 1]$ or $[0, 1]$.
+- **Keyword Retrieval (BM25)**: Scores are unbounded positive floating-point numbers (depending on term frequency and document length).
 
-A document ranked #1 in vector search and #5 in BM25 gets: 1/(60+1) + 1/(60+5) = 0.0164 + 0.0154 = 0.0318
+Directly summing these two scores is mathematically incorrect because their scales, distributions, and physical meanings are completely different. RRF bypasses this alignment issue by focusing only on the "relative position of a document in each list", standardizing the outputs of different retrieval systems into a single dimension.
 
-A document ranked #3 in vector search and #2 in BM25 gets: 1/(60+3) + 1/(60+2) = 0.0159 + 0.0161 = 0.0320
+#### 2. Deep Dive into the Formula
 
-RRF naturally balances the two signals. A document that ranks highly in both lists gets the best score. A document that ranks #1 in one list but is absent from the other gets a moderate score. This is robust because it uses ranks, not raw scores, so differences in score distributions between the two systems do not matter.
+For a candidate document $d$, its RRF score is calculated as follows:
+
+$$RRF\_score(d) = \sum_{R \in Rankings} \frac{1}{k + rank_R(d)}$$
+
+- **$rank_R(d)$**: The rank of document $d$ in the $R$-th retrieval system (1st place is $1$, 10th place is $10$). If the document is absent from a retrieval list, the term is treated as $0$.
+- **$k$ (smoothing factor, usually defaults to $60$)**: Prevents top-ranked results from dominating the final score, ensuring ranking robustness.
+  - **Without $k$**: The 1st rank gets a weight of $\frac{1}{1} = 1$, while the 2nd rank drops to $\frac{1}{2} = 0.5$. This massive gap allows a "single-list winner" to dominate the combined list.
+  - **With $k$**: The 1st rank gets $\frac{1}{60 + 1} \approx 0.0164$, and the 2nd rank gets $\frac{1}{60 + 2} \approx 0.0161$. The gap between top ranks is smoothed, making the fusion of multiple retrieval paths more balanced and robust.
+
+> [!NOTE]
+> **RRF Fusion Calculation & Ranking Example:**
+> - **Document A**: Ranked 3rd in vector search and 2nd in BM25. Its score is:
+>   $$Score(A) = \frac{1}{60 + 3} + \frac{1}{60 + 2} \approx 0.0159 + 0.0161 = 0.0320$$
+> - **Document B**: Ranked 1st in vector search but not retrieved by BM25. Its score is:
+>   $$Score(B) = \frac{1}{60 + 1} + 0 \approx 0.0164$$
+>
+> Final ranking: **Document A ($0.0320$) > Document B ($0.0164$)**.
+
+#### 3. Core Philosophy of RRF: Consensus as Truth
+RRF aligns perfectly with our retrieval intuition:
+- **"Mutual Agreement" beats "Single-Index Winner"**: As shown above, Document A, which ranks highly in both systems, outperforms Document B, which won 1st place in one list but was completely missing in the other.
+- **Mitigating Outliers (Noise)**: RRF suppresses false positives from individual retrieval algorithms. If a document ranks 1st in BM25 purely due to a keyword coincidence but is irrelevant to the semantic context (ranking extremely low or absent in vector search), RRF ensures it ranks below documents with solid agreement across both indices.
+
+#### 4. Real-world Engineering Application: Multimodal Video ETL Pipelines
+In modern LLM and multimodal systems, RRF is highly effective for processing heterogeneous multi-path data. For example, in a **multimodal video understanding and ETL (Extract, Transform, Load) pipeline**:
+- We can leverage models like **Gemini 3.5 Flash** to extract multimodal features from videos and build three independent search indices:
+  1. **ASR (Speech-to-Text) Index**: For matching spoken keywords (best suited for BM25 keyword search).
+  2. **Visual Scene Semantic Index**: For retrieving visual concepts or specific frames (best suited for multimodal vector search).
+  3. **Video Metadata Index**: Containing structured fields like timestamps, categories, or tags (best suited for structured metadata filtering).
+- RRF combines ASR retrieval, visual vector search, and metadata query ranks with minimal computational overhead—completely bypassing the need to train or tune expensive Cross-Encoder models—delivering high-recall, high-precision video clip localization.
 
 ### Reranking
 
@@ -93,52 +128,77 @@ Common reranking models (2026 lineup):
 
 ### Query Transformation
 
-Sometimes the problem is not retrieval but the query itself. "What was that thing about the new policy change?" is a terrible search query. It contains no specific terms. The embedding is vague. No retrieval system can find the right documents from this.
+Sometimes the failure in a RAG system is not due to the retrieval algorithm, but the quality of the user's query itself. A query like `"What was that thing about the new policy change?"` contains no specific entities or keywords, making its embedding representation in the semantic space extremely vague and difficult for any retrieval system to match accurately.
 
-**Query rewriting**: rephrase the user's query into a better search query. An LLM can do this:
+Query transformation leverages an LLM to reformulate, enrich, or rewrite the raw query before initiating the search. The two primary strategies for query transformation are:
+
+#### 1. Query Rewriting: Intent Standardization
+Query rewriting focuses on removing colloquial noise from the user's input or resolving context gaps in multi-turn dialogues to sharpen the search intent.
+
+- **The Core Pain Point**: Conversational queries often contain conversational clutter (e.g., "Please tell me," "Can you check," "I want to know about..."). These words dilute the attention weights of key concepts when converted into embeddings, degrading retrieval quality.
+- **LLM Solution**: By using a few-shot prompt, the LLM can strip out conversational filler and extract the raw search concepts.
+- **Coreference Resolution in Multi-turn Dialogue**: In conversational RAG, users frequently use pronouns or fragments. For example, after asking: "*What is the refund policy for Acme Enterprise?*", a user might ask: "*And what about its processing time?*". Searching with the latter fragment directly would fail. An LLM rewrite resolves this coreference, combining context to output: "*The processing time for Acme Enterprise refund policy*".
 
 ```
-User: "What was that thing about the new policy change?"
-Rewritten: "Recent policy changes and updates"
+Colloquial query: "What was that thing about the new policy change?"
+LLM Rewrite: "Recent policy changes and updates"
 ```
 
-**HyDE (Hypothetical Document Embeddings)**: instead of searching with the query, generate a hypothetical answer, embed that, and search for similar real documents.
+#### 2. HyDE (Hypothetical Document Embeddings): Bridging the Asymmetric Gap
+HyDE is a highly innovative retrieval paradigm that completely rethinks semantic search.
+
+- **The Core Pain Point (Asymmetric Retrieval)**: In embedding spaces, **questions and answers are linguistically asymmetric**. Questions are short, interrogative, and filled with question words; answers are longer, declarative, and rich in domain-specific terminology. Consequently, a question embedding and an answer embedding can live far apart. For instance, searching for *"What is a distributed lock?"* might retrieve other question chunks containing "What is..." rather than the actual implementation details of distributed locks.
+- **LLM Solution (HyDE)**:
+  1. **Generate Hypothesis**: Before retrieval, call the LLM to generate a hypothetical answer to the query without any external context (even if this draft contains hallucinations or incorrect metrics, it is perfectly fine).
+  2. **Embed the Hypothesis**: Convert this "fake answer" into an embedding vector.
+  3. **Search Real Documents**: Use the hypothesis vector to query the database for the most similar "real documents".
+- **Why it Works**: The generated "fake answer" and the "real document" share the same declarative style, vocabulary, sentence structures, and domain jargon. In the embedding space, the distance between **"Answer - Answer" is much smaller than the distance between "Question - Answer"**.
 
 ```
 Query: "What is the refund policy for enterprise?"
-Hypothetical answer: "Enterprise customers are eligible for a full refund
-within 60 days of purchase. Refunds are pro-rated based on the remaining
-subscription period and processed within 5-7 business days."
+Hypothetical Answer (Hallucinated draft): "Enterprise customers are eligible for a full refund within 60 days of purchase. Refunds are pro-rated based on the remaining subscription period and processed within 5-7 business days."
+(The system embeds this hypothesis to retrieve similar real docs)
 ```
 
-Embed the hypothetical answer and search for real documents similar to it. The intuition: the hypothetical answer lives closer in embedding space to the real answer than the original question does. Questions and answers have different linguistic structures. By generating a hypothetical answer, you bridge the gap between "question space" and "answer space" in the embedding.
-
-HyDE adds one LLM call before retrieval. This increases latency by 500-2000ms. Worth it when retrieval quality is poor on raw queries.
+- **The Latency Trade-off**: HyDE introduces an extra LLM call prior to retrieval, adding 500ms to 2000ms of latency depending on the model. In production, it is typically reserved for queries that are highly abstract, short, or suffer from extreme asymmetry.
 
 ### Parent-Child Chunking
 
-Standard chunking forces a trade-off: small chunks for precise retrieval, large chunks for sufficient context. Parent-child chunking eliminates this trade-off.
+In production environments, traditional "fixed-size chunking" (e.g., splitting texts uniformly into 300 tokens) often hits a **dilemma where you cannot optimize for both retrieval and synthesis**. Parent-child chunking elegantly resolves this by **decoupling the retrieval granularity from the synthesis (inference) granularity**.
 
-Index small chunks (128 tokens) for retrieval. When a small chunk is retrieved, return its parent chunk (512 tokens) for the prompt. The small chunk matches the query precisely. The parent chunk provides enough context for the LLM to generate a good answer.
+#### 1. The Dilemma of Traditional Chunking
+When building indices for long documents or metadata, you must choose between:
+- **Small chunks (e.g., 100 tokens)**: The vector representations are highly precise and excel at matching specific user queries (e.g., specific part numbers or contract clauses). However, because they lack surrounding context, the LLM receives isolated text fragments, often leading to out-of-context reasoning or hallucinations.
+- **Large chunks (e.g., 1000 tokens)**: The context is rich enough for synthesis, but the core features are diluted by surrounding conversational noise. This dilution makes it significantly harder for vector databases to rank the correct document highly, dropping search recall.
+
+#### 2. The Solution: Separating "Search" from "Read"
+The philosophy of parent-child chunking is: **"Search with a needle, read with a net."**
+
+In the database design, data is structured into two hierarchical layers:
+1. **Child Chunks (fine-grained)**: e.g., 128 tokens. These are embedded and stored in the vector index. Because they are short and semantically pure, they act as sensitive sensors that respond to specific details in user queries.
+2. **Parent Chunks (coarse-grained)**: e.g., 512 or 1024 tokens (which contain the child chunks). These do not participate in vector similarity search. Instead, they are stored in a raw text format within a document store (e.g., a Key-Value database or relational database) and mapped to child chunks via a `Parent_ID` field.
 
 ```mermaid
 graph TD
-    P["Parent chunk (512 tokens)<br/>Full section about refund policy"]
-    C1["Child chunk (128 tokens)<br/>Standard plan: 30-day refund"]
-    C2["Child chunk (128 tokens)<br/>Enterprise: 60-day pro-rated"]
-    C3["Child chunk (128 tokens)<br/>Processing time: 5-7 days"]
-    C4["Child chunk (128 tokens)<br/>How to submit a request"]
+    P["Parent Chunk (512 tokens)<br/>Full section on refund policy"]
+    C1["Child Chunk (128 tokens)<br/>Standard plan: 30-day refund"]
+    C2["Child Chunk (128 tokens)<br/>Enterprise: 60-day pro-rated refund"]
+    C3["Child Chunk (128 tokens)<br/>Processing time: 5-7 days"]
+    C4["Child Chunk (128 tokens)<br/>How to submit request"]
 
     P --> C1
     P --> C2
     P --> C3
     P --> C4
 
-    Q["Query: enterprise refund?"] -.->|"matches child"| C2
-    C2 -.->|"return parent"| P
+    Q["Query: enterprise refund?"] -.->|"Matches child chunk"| C2
+    C2 -.->|"Returns parent chunk"| P
 ```
 
-The query "enterprise refund?" matches child chunk C2 precisely. But the prompt receives the full parent chunk P, which includes the surrounding context about processing time and submission process.
+#### 3. Execution Workflow
+- **Step 1 (Search)**: The user issues a query. The vector database matches and retrieves the relevant **child chunk**.
+- **Step 2 (Fetch)**: The backend uses the `Parent_ID` of the matched child chunk to retrieve the corresponding full **parent chunk** from the document store.
+- **Step 3 (Read)**: The full text of the parent chunk is injected into the LLM prompt as context, allowing the LLM to generate precise, grounded answers in a complete context with full reasoning capability.
 
 ### Metadata Filtering
 
