@@ -74,6 +74,64 @@ graph TD
 | DeepEval (G-Eval + Pytest) | ~4 min | depends on judge | 80-88% | CI-native, per-PR regression gates |
 | Human expert | ~2 hours | ~$500 | 100% (by definition) | Calibration, edge cases, policy |
 
+### Three-Layer Evaluation Architecture
+
+In practical AI engineering, evaluation systems typically adopt a **layered architecture** to filter outputs from the bottom up. This design ensures evaluation throughput and speed while controlling API costs and aligning final judgment with human experts.
+
+```mermaid
+graph TD
+    subgraph Three-Layer Eval Architecture
+    L1[Layer 1: Rule-Based & Deterministic<br>Rule-based & Fail-Fast] -->|Pass| L2[Layer 2: LLM-as-a-Judge<br>Current Industry Workhorse]
+    L2 -->|Sample Calibration| L3[Layer 3: Human Evaluation<br>Expert Calibration & Anchor]
+    end
+    
+    style L1 fill:#e1f5fe,stroke:#01579b,stroke-width:2px
+    style L2 fill:#e8f5e9,stroke:#1b5e20,stroke-width:2px
+    style L3 fill:#fff3e0,stroke:#e65100,stroke-width:2px
+```
+
+#### Layer 1: Rule-Based & Deterministic (Rule-based) — Must Fail-Fast
+
+Before calling expensive and slow LLM judges, use deterministic code to filter out simple/obvious errors first.
+
+- **Core Metrics for Implementation**:
+  - **JSON-Schema Validation**: If your business requires strict compliance with a specific JSON format (e.g., tagging, metadata extraction), parse and validate it directly using code. If parsing fails, score it zero immediately and skip subsequent LLM-as-a-judge evaluations.
+  - **Regex & Sensitive Word Interception**: Check if the output contains placeholders (like `{{missing_value}}`), leaks the system prompt, or contains illegal/sensitive characters.
+  - **Length & Type Constraints**: For instance, if a movie summary is limited to 100 words, mark it non-compliant if it exceeds 150 words.
+- **Best Practice**: Embed this layer into unit tests or CI gates. It takes only milliseconds, incurs zero API cost, and serves as a highly cost-effective safety valve.
+
+#### Layer 2: LLM-as-a-Judge — The Current Industry Workhorse
+
+Use a more capable model (Claude 3.5 Sonnet or GPT-4o are recommended as judges) to evaluate the target model.
+
+- **Three Main Evolution Directions**:
+  1. **G-Eval (Rubric-based Natural Language Scoring)**: Provide the judge with an extremely detailed rubric and force it to use **Chain-of-Thought (CoT)** (write reasons first, score at the end).
+  2. **QAG Mode (Question-Answer Generation Loop)**: Particularly suited for RAG (Retrieval-Augmented Generation) scenarios. Instead of direct scoring, ask the judge binary questions: "Is the answer fully based on reference docs? (Yes/No)", "Does the answer address the user's question? (Yes/No)". Converting subjective questions into objective multiple-choice/binary tasks yields highly stable results.
+  3. **Pairwise Preference (Head-to-Head)**: Feed outputs from the old prompt and new prompt side-by-side to the judge (anonymized for blind testing) and let the judge choose which is better (A wins / B wins / Tie).
+- **Preventing Judge Biases**:
+  > [!WARNING]
+  > **The Three Sins of LLM Judges:**
+  > - **Verbosity Bias**: The judge tends to favor longer, more wordy responses.
+  > - **Position Bias**: In blind testing, the judge is biased towards selecting option A (placed first).
+  > - **Self-Enhancement Bias**: GPT models prefer GPT-style outputs, while Claude models prefer Claude-style outputs.
+  
+  **Countermeasures**:
+  - Explicitly state in the prompt: "Conciseness is a key evaluation metric. Do not award high scores for verbose or overly long responses."
+  - For pairwise comparisons, swap the positions of A and B and run the evaluation again, taking the average score.
+  - Choose judge models from a different family than the model being evaluated (e.g., use Claude to evaluate GPT).
+  - Use binary classification (Pass/Fail, Yes/No) instead of a 1-5 Likert scale where possible. Binary outputs are harder to inflate and more stable to reproduce.
+
+#### Layer 3: Human Evaluation — The Calibration Anchor
+
+Human evaluation isn't meant for grading thousands of data points daily—which would burn out any team. Its sole purpose is **calibrating the judge model (Aligning the Judge)**.
+
+- **Core Implementation Practices**:
+  1. **Blind Testing (Arena Mode)**: Select 30–50 hard, ambiguous cases from core business flows and have human experts grade them blindly.
+  2. **Consistency Check**: Compute agreement metrics (such as Cohen's Kappa) between human grades and LLM judge grades.
+- **Best Practice**:
+  - If the consistency between the LLM judge and human experts reaches 80%–85%+, the judge is considered engineering-reliable. You can then confidently offload 95% of automated regression tests to this judge.
+  - When misalignment occurs, inspect the "reasoning" provided by the judge and refine the judge model's system prompt accordingly.
+
 ### LLM-as-Judge: The Workhorse
 
 This is the evaluation method you will use 90% of the time. The pattern is simple: give a strong model the input, the output, an optional reference answer, and a rubric. Ask it to score.
@@ -139,23 +197,74 @@ flowchart LR
 
 **Decide**: If the new version is statistically significantly better (or not worse), ship it. If it regresses, block.
 
-### Eval Datasets: The Foundation
+### Eval Datasets: Construction & Best Practices
 
-Your eval dataset is only as good as the cases in it. Three types of test cases matter:
+The quality of your evaluation dataset directly determines the ceiling of your evaluation results. In building an evaluation dataset, the following three types of test cases are essential to form a complete quality baseline:
 
-**Golden test set** (50-100 cases): Curated input-output pairs that represent your core use cases. These are your regression tests. Every prompt change must pass these.
+- **Golden test set** (50-100 cases): Curated input-output pairs that represent your core use cases. These are your regression tests. Every prompt change must pass these.
+- **Adversarial examples** (20-50 cases): Inputs designed to break your system. Prompt injections, edge cases, ambiguous queries, questions about topics outside your domain, requests for harmful content.
+- **Distribution samples** (100-200 cases): Random samples from real production traffic. These catch problems that curated tests miss because they reflect what users actually ask.
 
-**Adversarial examples** (20-50 cases): Inputs designed to break your system. Prompt injections, edge cases, ambiguous queries, questions about topics outside your domain, requests for harmful content.
+Building a high-quality evaluation dataset requires systematic steps and adherence to best practices.
 
-**Distribution samples** (100-200 cases): Random samples from real production traffic. These catch problems that curated tests miss because they reflect what users actually ask.
+#### 1. Four Core Steps to Build an Evaluation Dataset
+
+1. **Define Evaluation Goals & Scenarios (Defining Schema)**
+   Do not try to build a "one-size-fits-all" dataset. First, clarify the scenarios your model is applied to:
+   - **General Capabilities**: Reasoning, Coding, Role-play, Text Summarization, etc.
+   - **Vertical Business**: Film matching, automated metadata extraction, ASR error correction, long video understanding, etc.
+   - **Guardrail Evaluation**: Safety, Hallucination rate, Robustness (sensitivity to typos and noise).
+
+2. **Determine Data Format (Data Format)**
+   JSONL is the most commonly used format in the industry. Each line is an independent JSON object, which is convenient for streaming. Depending on the evaluation method, the data format is generally structured as:
+   - **Objective Evaluation (with standard reference answers)**:
+     ```json
+     {"question": "Who directed The Matrix?", "answer": "The Wachowskis", "category": "movie_trivia"}
+     ```
+   - **Subjective/Open-ended Evaluation (based on LLM-as-a-Judge or human evaluation)**:
+     ```json
+     {"instruction": "Write a 100-word plot summary for a mystery movie about a time loop.", "reference": "Must include core suspense elements and have a tight pace.", "category": "creative_writing"}
+     ```
+
+3. **Data Sourcing & Collection (Data Sourcing)**
+   - **Production Logs (Highly Recommended)**: Sample from actual production traffic (User Prompts) and anonymize it. This represents the most realistic "real test" for your business.
+   - **Synthetic Data**: Use the most capable models (e.g., GPT-4o or Claude 3.5 Sonnet) to batch-generate Prompts according to a specific Schema, then filter them via human review or heuristics.
+   - **Adoption/Modification of Public Benchmarks**: Adapt standard benchmarks like MMLU, GSM8K, or MATH to fit your specific business requirements.
+
+4. **Cleaning & Validation (Data Curation)**
+   - **Deduplication**: Use semantic similarity algorithms or exact matching to prevent near-identical Prompts from appearing multiple times.
+   - **Difficulty Grading**: Categorize the dataset into Easy / Medium / Hard to clearly differentiate performance levels across different models.
+   - **Rule-based Filtering**: Filter out grammatical errors, ambiguous phrasing, poorly defined prompts, or sensitive information.
+
+#### 2. Best Practices for Dataset Construction
+
+1. **Independence & Preventing Cheating (Data Contamination Prevention)**
+   - Never allow evaluation dataset samples to leak into your model training or fine-tuning datasets.
+   - If evaluation sets are derived from public datasets, periodically update or rewrite them (e.g., swapping entities, changing numbers, altering sentence structures) to prevent models from scoring high purely through memorization.
+
+2. **Coverage & Balanced Distribution (Data Distribution)**
+   - **Scenario Coverage**: If your use case involves "video content understanding," your evaluation dataset should not only include general long-text Prompts, but also complex cases with timestamps, heterogeneous metadata, or long-context queries.
+   - **Tag Balance**: Ensure that the distribution of categories (e.g., summarization, extraction, reasoning, translation) aligns with your actual production traffic.
+
+3. **Building the "Golden Dataset" (Golden Dataset)**
+   - Do not chase dataset size blindly. For business evals, a high-quality, manually verified "Golden Dataset" of 100–500 cases is far more valuable than 10,000 uncleaned synthetic data points.
+   - A Golden Dataset enables rapid Regression Testing, allowing you to run evals in minutes and detect quality drifts when fine-tuning or upgrading the base model.
+
+4. **Incorporating Adversarial Testing (Adversarial Testing)**
+   - Introduce 5%–10% adversarial samples into the dataset.
+   - Examples: inputs with typos, conflicting context, or prompts designed to induce errors (Prompt Injections). This is crucial for evaluating model robustness and security boundaries.
+
+5. **Version Control (Versioning)**
+   - Datasets, like code, must iterate. Implement clear version control (e.g., `eval_v1.0.jsonl`, `eval_v1.1_hard.jsonl`).
+   - Sync and update the evaluation set whenever online business logic or user behavior patterns change.
 
 ### Sample Size and Confidence
 
 50 test cases is not enough.
 
-If your eval scores 90% on 50 cases, the 95% confidence interval is [78%, 97%]. That is a 19-point spread. You cannot distinguish a system scoring 80% from one scoring 96%.
+If your eval scores 90% on 50 cases (i.e., 45 correct out of 50), the 95% confidence interval calculated using the exact binomial method (Clopper-Pearson) is **[78%, 97%]**. This means the true accuracy has a 95% chance of falling between 78% and 97%, a spread of 19 percentage points. At this sample size, you cannot statistically distinguish a system with a true accuracy of 80% from one with 96%.
 
-At 200 cases with 90% accuracy, the confidence interval tightens to [85%, 94%]. Now you can make decisions.
+At 200 cases with 90% accuracy, the confidence interval tightens to **[85%, 94%]**. Now you can make decisions.
 
 | Test cases | Observed accuracy | 95% CI width | Can detect 5% regression? |
 |-----------|------------------|-------------|--------------------------|
