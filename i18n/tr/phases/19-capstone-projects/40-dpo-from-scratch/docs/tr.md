@@ -27,42 +27,46 @@ DPO, her iki aşamayı tek bir denetimli kayıpla değiştirir. Ödül modeli as
 
 Bradley-Terry modelinden başlayalım.`x`Ve iki tamamlama.`y_w`(seçilip) ve `y_l`(Redeni) insan için en iyi olasılık.`y_w`-
 
-```text
-P(y_w > y_l | x) = sigmoid( r(x, y_w) - r(x, y_l) )
+```math
+P(y_w > y_l \mid x) = \sigma\big( r(x, y_w) - r(x, y_l) \big)
 ```
 
 nerede`r`RLHF öncelikle uyumludur.`r`- Bu, bir politika eğitimi.`pi`Maksimumlandırmak için`r`KL demirle:
 
-```text
-max_pi   E_{x, y~pi} [ r(x, y) ] - beta * KL(pi || pi_ref)
+```math
+\max_{\pi} \; \mathbb{E}_{x, y \sim \pi} \big[ r(x, y) \big] - \beta \, \mathrm{KL}(\pi \,\|\, \pi_{\text{ref}})
 ```
 
 DPO'nun çıkarımı , en iyi politika `pi*`Bu amaç altında, kapalı bir biçimde `r`- ...
 
-```text
-pi*(y | x) = (1/Z(x)) * pi_ref(y | x) * exp( r(x, y) / beta )
+```math
+\pi^*(y \mid x) = \frac{1}{Z(x)} \, \pi_{\text{ref}}(y \mid x) \exp\!\left( \frac{r(x, y)}{\beta} \right)
 ```
 
 Dönüştürme`r`- ...
 
-```text
-r(x, y) = beta * ( log pi*(y | x) - log pi_ref(y | x) ) + beta * log Z(x)
+```math
+r(x, y) = \beta \big( \log \pi^*(y \mid x) - \log \pi_{\text{ref}}(y \mid x) \big) + \beta \log Z(x)
 ```
 
 - Evet .`log Z(x)`İkisi için de aynı termindir `y_w`ve `y_l`(Bunun üzerine kurulur)`x`- Hayır .`y`), bu yüzden tercih farkını hesapladığınızda iptal edilir:
 
-```text
-r(x, y_w) - r(x, y_l) = beta * ( log pi_theta(y_w|x) - log pi_ref(y_w|x)
-                                - log pi_theta(y_l|x) + log pi_ref(y_l|x) )
+```math
+\begin{aligned}
+r(x, y_w) - r(x, y_l) = \beta \big( &\log \pi_\theta(y_w \mid x) - \log \pi_{\text{ref}}(y_w \mid x) \\
+&- \log \pi_\theta(y_l \mid x) + \log \pi_{\text{ref}}(y_l \mid x) \big)
+\end{aligned}
 ```
 
 Bradley-Terry sigmoid'e yer değiştir ve tercih çiftlerine karşı negatif log olasılığını alın:
 
-```text
-L_DPO(theta) = - E_{(x, y_w, y_l)} [
-  log sigmoid( beta * ( log pi_theta(y_w|x) - log pi_ref(y_w|x)
-                       - log pi_theta(y_l|x) + log pi_ref(y_l|x) ) )
-]
+```math
+\begin{aligned}
+L_{\text{DPO}}(\theta) = -\mathbb{E}_{(x, y_w, y_l)} \Big[
+  \log \sigma\big( \beta \big( &\log \pi_\theta(y_w \mid x) - \log \pi_{\text{ref}}(y_w \mid x) \\
+  &- \log \pi_\theta(y_l \mid x) + \log \pi_{\text{ref}}(y_l \mid x) \big) \big)
+\Big]
+\end{aligned}
 ```
 
 Bu kayıp. Bu bir tek skalar üzerinde bir sigmoid örneğin, dört log- olasılıklardan hesaplanmıştır. ayrı ödül modeli yoktur.
@@ -87,8 +91,8 @@ flowchart LR
 
 Eğitim koşusundan önce akıl sağlığı kontrolü yapın.`log pi_theta(y_w | x)`- ...
 
-```text
-d L_DPO / d log pi_theta(y_w | x) = - beta * (1 - sigmoid(z))
+```math
+\frac{\partial L_{\text{DPO}}}{\partial \log \pi_\theta(y_w \mid x)} = -\beta \big(1 - \sigma(z)\big)
 ```
 
 nerede`z`Bu, herkes için negatif.`z`, yani: politikanın seçilen tamamlama log-probabiliyetini arttırmak kayıpları azaltır.`log pi_theta(y_l | x)`Bu nedenle, bu süreçte, bir süre önce, bir süre önce, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir süre sonra, bir sürece bir sürece bir sürece bir sürece, bir sürece, bir sürece, bir sürece bir sürececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececececece

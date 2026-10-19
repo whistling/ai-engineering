@@ -49,15 +49,14 @@ Her bir (resim, soru, cevap) için, resmini kodlayın, soruyu yerleştirin, deko
 
 ### BLEU-4
 
-```text
-BLEU-4 = BP * exp(mean(log p1, log p2, log p3, log p4))
+```math
+\text{BLEU-4} = \text{BP} \cdot \exp\big(\text{mean}(\log p_1, \log p_2, \log p_3, \log p_4)\big)
 ```
 
 Nerede ?`p_n`değiştirilmiş n-gram doğruluğu (herhangi bir referansta bulunan üretilen n-gramların toplam üretilen n-gram ile bölünmüş kesilmiş sayısı) ve `BP`Kısa süreli ceza:
 
-```text
-BP = 1                if generated length > reference length
-   = exp(1 - r/g)     otherwise, where r is reference length and g is generated
+```math
+\text{BP} = \begin{cases} 1 & \text{if generated length} > \text{reference length} \\ \exp(1 - r/g) & \text{otherwise, where } r \text{ is reference length and } g \text{ is generated} \end{cases}
 ```
 
 Küçük örnekler için yumuşatma gerekir.`p_n`Uygulama, düşük sayımlı rejimler için en güvenli varsayılan olan Chen ve Cherry "metodu 1" (herhangi bir sıfır sayımı için sayıcı ve isimlendiriciye 1 ekle) kullanır.

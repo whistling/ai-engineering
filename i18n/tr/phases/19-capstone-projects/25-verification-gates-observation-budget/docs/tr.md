@@ -82,7 +82,7 @@ Uygulama tek bir yöntemdir.`main.py`Ayrıca testler.
 
 ## Zincir düzeninin neden önemi var
 
-İzin vermekten daha ucuz bir inkâr.`WhitelistGate`O(1) hash arama ile çalışır. `RegexGate`O(pattern * argv) ile çalışır. `RecencyGate`Mesaj mağazasının küçük bir parçası okur.`BudgetGate`Bu yüzden, maliyeti artan bir iş yapmadan önce reddedilen arama kısa devreye girer.
+İzin vermekten daha ucuz bir inkâr.`WhitelistGate`İçeri giriyor .$O(1)$- Şarap aramak.`RegexGate`İçeri giriyor .$O(\text{pattern} \cdot \text{argv})$- Evet .`RecencyGate`Mesaj mağazasının küçük bir parçası okur.`BudgetGate`Bu yüzden, maliyeti artan bir iş yapmadan önce reddedilen arama kısa devreye girer.
 
 Bu yüzden, bu konuda bir çok şey yapmamalıyız. Bu yüzden, bu konuda bir şey yapmamalıyız. Bu yüzden, bu konuda bir şey yapmamalıyız.
 

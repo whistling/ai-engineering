@@ -16,7 +16,7 @@
 
 ## Sorun
 
-Modern dil model eğitim programı, saniyede yüz binlerce numune ile düzinelerce işçi için simgeler okuyor. Diskte JSONL ilk soğuk saklama sayfası hatası sırasında ölür: JSON tarayıcı yavaş, belge sınırları adreslenebilir değildir ve "4,217,884" örneğini aramak için dosyayı tarama gerekir. Parquet bile iyi sıkıştırılır, çünkü antrenör sütun istemez; O(1) rastgele erişimle düz bir token akışı ister.
+Modern dil model eğitim programı, saniyede yüz binlerce numune ile düzinelerce işçi için simgeler okuyor. Diskte JSONL ilk soğuk saklama sayfası hatası sırasında ölür: JSON tarayıcı yavaş, belge sınırları adreslenebilir değildir ve "4,217,884" örneğini aramak için dosyayı tarama gerekir. Parket bile iyi sıkıştırılır, çünkü antrenör sütun istemez.$O(1)$- Kesinlikle.
 
 HDF5, kısımlı, boyutlandırılabilir, sadece sayfaları depolama dostu olan bir veri kümesi sunar.`tokens[3,200,000 : 3,200,8192]`HDF5 ve HDF5 talep edilen hiperlabı sayfa önbelleğinden yeni tahsis edilen NumPy dizisine kopyalar.
 

@@ -61,8 +61,8 @@ flowchart TB
 
 Bu derste kullanılan UCB formülü klasik UCB1'dir.
 
-```text
-ucb(branch) = mean_reward(branch) + c * sqrt( ln(total_runs) / runs(branch) )
+```math
+\text{ucb}(\text{branch}) = \text{mean\_reward}(\text{branch}) + c \sqrt{ \frac{\ln(\text{total\_runs})}{\text{runs}(\text{branch})} }
 ```
 
 `total_runs`Tüm dallarda tamamlanan tüm deneylerin sayımıdır.`c`- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -`sqrt(2)`- Zıfır koşuşturma yapan bir dal .`+inf`Bu nedenle denemeden dallar her zaman önce planlanır. Yüksek ortalama ödül alan dallar diğer dallar yetişene kadar yüksek puanlar tutar; çok fazla ödül almadan çalışan bir dal daha az çalıştırılan alternatifler tarafından örtülür.

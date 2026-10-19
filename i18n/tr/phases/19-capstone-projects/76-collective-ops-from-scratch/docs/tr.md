@@ -16,7 +16,7 @@
 
 ## Sorun
 
-N sıralar üzerinde saf bir tüm azaltmak, N çarpı tenzoru köküye gönderir ve N çarpı geri gönderir. Band genişliği, her sıra için O ((N) olarak ölçebilir, kök bir şişek boynuna dönüşür ve duvar saatinin zemini en yavaş bağlantı çarpı N'dir. Ring allreduce flattens'i 2(N-1) büyüklüğündeki T/N parçalarına düşürür, böylece sıra başına baytlar kümenin büyüklüğünden bağımsız olarak 2T(N-1)/N'e düşer. Ağacı altreduce küçük N ve yüksek gecikme bağlantılarında kazanır çünkü derinlik 2(N) yerine log2(N) hops. Kluster şekli için yanlış topoloji seçin ve en yavaş GPU adım zamanını belirler.
+N sıralar üzerinde saf bir tüm azaltmak, N katı tenzoru köşeye gönderir ve N katı geri gönderir.$O(N)$Bu da bir dişli saatin en yavaş bağlantısı N.$2(N-1)$Büyüklükteki parçalar $T/N$, bu yüzden sıra başına baytlar düşer $2T(N-1)/N$Ağacın tümü küçük N ve yüksek gecikme bağlantılarında kazanç kazanır çünkü derinlik $\log_2(N)$$2(N-1)$Kluster şekli için yanlış topoloji seçin ve en yavaş GPU adım süresini belirler.
 
 Bu izleri okuduğunuz her dağıtılan eğitim çerçevesinin temelinde bu dört primitif var. PyTorch DDP, gradientleri parametre kova başına bir allreduce ile senkronize eder. ZeRO, reduc_scatter ile optimizer durumunu parçalayarak ve allgather tarafından güncellenmiş parametreleri yayınlar. FSDP, tüm ileriyi tüm toplama artı azaltma_paylayıcıya dönüştürür. Bombalardaki paralel ihtiyaçlar, aşama grupları arasında etkinleştirmeler için yayınlanır. Eğer dört kolektifi uygulayamıyorsanız, eğitimlerin neden durduğunu, gradient eşleşmemesinin neden 3'te olduğunu veya topolojileri değiştirdiğinizde boru hattı kabarcığının neden iki katına çıkıyor olduğunu düşünemezsiniz.
 

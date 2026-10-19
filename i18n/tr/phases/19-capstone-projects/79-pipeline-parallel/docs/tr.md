@@ -16,7 +16,7 @@
 
 ## Sorun
 
-Fp16'da 70B parametre modeli sadece 140 GB parametre gerektirir. Hiçbir tüketici GPU'sı tutmuyor. ZeRO-3 sıralar boyunca parametreleri parçaladı, ancak her adım için her sıra tam katmanı toplamak için her katman için log ((N) hops ödüyor. Pipeline paralelliği farklı bir yol alır: modeli N aşamalara ayırıp her sırada bir aşama koyulur. Katman 1'nin ileri kısmı 0 sırada bitirir ve etkinleştirme tensörünü 1 sıraya verir; 1 sırası 2 sırayı yürütür ve 2 sırasına el koyar ve böylece devam eder. Geriye doğru akıyor. Hatıra, her sıra sadece bir aşamayı tutduğu için doğrusal olarak düşer; hesaplama sıralıdır, bu da kabarcık sorunu.
+Fp16'daki 70B parametre modeli sadece 140 GB parametrelere ihtiyaç duyar. Hiçbir tüketici GPU onu tutamaz. ZeRO-3 sıralar boyunca parametreleri parçalaır, ancak her adım için tüm katmanı toplamak için her sıra gerektirir.$\log(N)$Bir katman için atlar. Pipeline paralel farklı bir yol alır: modeli N aşamalara ayırıp her sıra üzerinde bir aşama koyun. Katman 1'nin önüne 0 aşamasında biter ve etkinleştirme tensoru 1 aşamasına bırakır; 1 aşamasında 2 aşama geçer ve 2 aşamasında 2 aşamasında eller kullanır. Geriye doğru akıyor. Hatıra her sıra sadece bir aşama tutduğu için doğrusal olarak düşer; hesaplama sıralıdır, bu da kabarcık sorunu oluşturur.
 
 Bubble, boru hattının başlangıcında (en ilk mikrobatçın son aşamaya ulaşmasını bekleyen) ve sonunda (son mikrobatçın tekrar akmasına bekleyen) boşluk süredir. M mikrobaçları ve N aşamalarda aşama başına kabarcık fraksiyonu (N-1) /(M+N-1'dir. M=8, N=4'de bu %27'dir. M=64, N=4'te ise %4,5%. Bir adım başına çok sayıda mikrobatç olduğunda kabarcık küçülür, bu da mikrobatç boyutları anlamına gelir, bu da mikrobatç tasarımını yönlendiren kısıtlama.
 

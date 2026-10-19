@@ -105,7 +105,7 @@ def lcs_length(a, b):
     return int(dp[n, m])
 ```
 
-Numpy tablosu uygulamayı okuyabilir hale getirir; saf Python listeleri de çalışırdı. ROUGE-L'ye seçilen görevler görev başına O(n m) maliyetini öder. Tipik bir milisaniyede kalırken kısa süreler için.
+Numpy tablosu uygulamanın okunmasını sağlar; saf Python listeleri de çalışırdı. ROUGE-L'ye seçilen görevler $O(n m)$Tipik bir özet uzunlukları için bir milisaniyede kalır.
 
 ## Dürüstlük
 
